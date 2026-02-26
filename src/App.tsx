@@ -16,8 +16,9 @@ const CANVAS_HEIGHT = 600;
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<GameStatus>(GameStatus.START);
-  const [score, setScore] = useState(0);
-  const [round, setRound] = useState(1);
+  const [totalScore, setTotalScore] = useState(0);
+  const [levelScore, setLevelScore] = useState(0);
+  const [level, setLevel] = useState(1);
   const [lang, setLang] = useState<'en' | 'zh'>('zh');
   const t = LANGUAGES[lang];
 
@@ -30,39 +31,33 @@ export default function App() {
   const requestRef = useRef<number>(null);
   const lastEnemySpawnRef = useRef<number>(0);
 
-  const initLevel = useCallback(() => {
-    // 6 cities
-    const cities: City[] = [];
-    const cityWidth = 40;
-    const spacing = (CANVAS_WIDTH - 200) / 7;
-    
-    // Positions for cities and batteries
-    // Batteries at indices 0, 3.5, 7 essentially
+  const initLevel = useCallback((isNewGame: boolean) => {
+    if (isNewGame) {
+      // 6 cities
+      const cityXPositions = [
+        150, 220, 290, 510, 580, 650
+      ];
+
+      citiesRef.current = cityXPositions.map((x, i) => ({
+        id: `c${i}`,
+        pos: { x, y: CANVAS_HEIGHT - 15 },
+        active: true,
+        radius: 15,
+        color: '#4cc9f0'
+      }));
+      setTotalScore(0);
+      setLevel(1);
+    }
+
+    // Reset batteries and ammo
     const batteryPositions = [50, CANVAS_WIDTH / 2, CANVAS_WIDTH - 50];
-    
     batteriesRef.current = [
       { id: 'b0', pos: { x: batteryPositions[0], y: CANVAS_HEIGHT - 20 }, active: true, missiles: 20, maxMissiles: 20, radius: 25, color: '#00ff41' },
       { id: 'b1', pos: { x: batteryPositions[1], y: CANVAS_HEIGHT - 20 }, active: true, missiles: 40, maxMissiles: 40, radius: 30, color: '#00ff41' },
       { id: 'b2', pos: { x: batteryPositions[2], y: CANVAS_HEIGHT - 20 }, active: true, missiles: 20, maxMissiles: 20, radius: 25, color: '#00ff41' },
     ];
 
-    const cityXPositions = [
-      batteryPositions[0] + spacing,
-      batteryPositions[0] + spacing * 2,
-      batteryPositions[0] + spacing * 3,
-      batteryPositions[1] + spacing,
-      batteryPositions[1] + spacing * 2,
-      batteryPositions[1] + spacing * 3,
-    ];
-
-    citiesRef.current = cityXPositions.map((x, i) => ({
-      id: `c${i}`,
-      pos: { x, y: CANVAS_HEIGHT - 15 },
-      active: true,
-      radius: 15,
-      color: '#4cc9f0'
-    }));
-
+    setLevelScore(0);
     missilesRef.current = [];
     enemiesRef.current = [];
     explosionsRef.current = [];
@@ -75,7 +70,8 @@ export default function App() {
     const target = targets[Math.floor(Math.random() * targets.length)];
     const startX = Math.random() * CANVAS_WIDTH;
     
-    const speed = 0.001 + (round * 0.0003); // Slower than before
+    // Difficulty increases with level
+    const speed = 0.001 + (level * 0.0004); 
 
     enemiesRef.current.push({
       id: Math.random().toString(36).substr(2, 9),
@@ -83,10 +79,10 @@ export default function App() {
       pos: { x: startX, y: 0 },
       target: { x: target.pos.x, y: target.pos.y },
       progress: 0,
-      speed: Math.min(speed, 0.005),
+      speed: Math.min(speed, 0.008),
       color: '#ff4444'
     });
-  }, [round]);
+  }, [level]);
 
   const fireMissile = (targetX: number, targetY: number) => {
     if (status !== GameStatus.PLAYING) return;
@@ -123,8 +119,8 @@ export default function App() {
   const update = useCallback((time: number) => {
     if (status !== GameStatus.PLAYING) return;
 
-    // Spawn enemies
-    const spawnRate = Math.max(2000 - (round * 200), 500);
+    // Spawn enemies - Rate increases with level
+    const spawnRate = Math.max(1500 - (level * 150), 300);
     if (time - lastEnemySpawnRef.current > spawnRate) {
       spawnEnemy();
       lastEnemySpawnRef.current = time;
@@ -174,10 +170,10 @@ export default function App() {
 
         // Check what was hit
         citiesRef.current.forEach(c => {
-          if (c.active && Math.abs(c.pos.x - e.target!.x) < 5) c.active = false;
+          if (c.active && Math.abs(c.pos.x - e.target!.x) < 10) c.active = false;
         });
         batteriesRef.current.forEach(b => {
-          if (b.active && Math.abs(b.pos.x - e.target!.x) < 5) b.active = false;
+          if (b.active && Math.abs(b.pos.x - e.target!.x) < 10) b.active = false;
         });
 
         return false;
@@ -202,7 +198,8 @@ export default function App() {
           const dy = e.pos.y - exp.pos.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < exp.currentRadius) {
-            setScore(prev => prev + 20);
+            setTotalScore(prev => prev + 20);
+            setLevelScore(prev => prev + 20);
             // Chain explosion
             explosionsRef.current.push({
               id: Math.random().toString(36).substr(2, 9),
@@ -229,25 +226,15 @@ export default function App() {
       audioService.stopMusic();
     }
 
-    // Check Win
-    if (score >= 1000) {
-      setStatus(GameStatus.WON);
+    // Check Level Complete
+    if (levelScore >= 800) {
+      setStatus(GameStatus.NEXT_ROUND);
       audioService.stopMusic();
-    }
-
-    // Check Round End (all enemies gone and no missiles left in batteries)
-    const totalMissilesLeft = batteriesRef.current.reduce((acc, b) => acc + (b.active ? b.missiles : 0), 0);
-    if (enemiesRef.current.length === 0 && totalMissilesLeft === 0 && missilesRef.current.length === 0) {
-       // Refill for next round
-       batteriesRef.current.forEach(b => {
-         if (b.active) b.missiles = b.maxMissiles;
-       });
-       setRound(prev => prev + 1);
     }
 
     draw();
     requestRef.current = requestAnimationFrame(update);
-  }, [status, score, round, spawnEnemy]);
+  }, [status, levelScore, level, spawnEnemy]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -354,9 +341,14 @@ export default function App() {
   }, [status, update]);
 
   const startGame = () => {
-    setScore(0);
-    setRound(1);
-    initLevel();
+    initLevel(true);
+    setStatus(GameStatus.PLAYING);
+    audioService.startMusic();
+  };
+
+  const startNextLevel = () => {
+    setLevel(prev => prev + 1);
+    initLevel(false);
     setStatus(GameStatus.PLAYING);
     audioService.startMusic();
   };
@@ -399,15 +391,15 @@ export default function App() {
             {t.title}
           </h1>
           <div className="flex gap-4 text-xs font-mono opacity-60 uppercase tracking-widest">
-            <span>{t.round}: {round}</span>
-            <span>{t.target}</span>
+            <span>{t.round}: {level}</span>
+            <span>{t.target}: {levelScore}/800</span>
           </div>
         </div>
         
         <div className="flex items-center gap-6">
           <div className="text-right">
             <div className="text-xs font-mono opacity-50 uppercase">{t.score}</div>
-            <div className="text-3xl font-display font-bold tabular-nums text-[#00ff41]">{score}</div>
+            <div className="text-3xl font-display font-bold tabular-nums text-[#00ff41]">{totalScore}</div>
           </div>
           <button 
             onClick={() => setLang(l => l === 'en' ? 'zh' : 'en')}
@@ -462,21 +454,43 @@ export default function App() {
               </motion.div>
             )}
 
-            {(status === GameStatus.WON || status === GameStatus.LOST) && (
+            {status === GameStatus.NEXT_ROUND && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md z-20 p-8 text-center"
               >
-                <div className={cn(
-                  "mb-6 text-5xl font-display font-bold tracking-tighter",
-                  status === GameStatus.WON ? "text-[#00ff41]" : "text-[#ff4444]"
-                )}>
-                  {status === GameStatus.WON ? t.win : t.lose}
+                <div className="mb-6 text-5xl font-display font-bold tracking-tighter text-[#00ff41]">
+                  {lang === 'en' ? `Level ${level} Complete!` : `第 ${level} 关完成！`}
+                </div>
+                <div className="mb-10 space-y-2">
+                  <div className="text-xs font-mono opacity-50 uppercase">{t.score}</div>
+                  <div className="text-6xl font-display font-bold tabular-nums">{totalScore}</div>
+                  <p className="text-[#00ff41] font-mono text-sm animate-pulse">
+                    {lang === 'en' ? 'Enemy rockets accelerating...' : '敌方火箭正在加速...'}
+                  </p>
+                </div>
+                <button 
+                  onClick={startNextLevel}
+                  className="flex items-center gap-2 px-8 py-4 bg-[#00ff41] text-black font-bold rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,255,65,0.4)]"
+                >
+                  {lang === 'en' ? 'Next Level' : '下一关'}
+                </button>
+              </motion.div>
+            )}
+
+            {status === GameStatus.LOST && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md z-20 p-8 text-center"
+              >
+                <div className="mb-6 text-5xl font-display font-bold tracking-tighter text-[#ff4444]">
+                  {t.lose}
                 </div>
                 <div className="mb-10">
                   <div className="text-xs font-mono opacity-50 uppercase mb-1">{t.score}</div>
-                  <div className="text-6xl font-display font-bold tabular-nums">{score}</div>
+                  <div className="text-6xl font-display font-bold tabular-nums">{totalScore}</div>
                 </div>
                 <button 
                   onClick={startGame}
