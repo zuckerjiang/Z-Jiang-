@@ -353,13 +353,8 @@ export default function App() {
     audioService.startMusic();
   };
 
-  const handleCanvasClick = (e: React.MouseEvent | React.TouchEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (status !== GameStatus.PLAYING) return;
-    
-    // Prevent double-firing on touch devices (where touch followed by mouse event)
-    if (e.type === 'touchstart' && e.cancelable) {
-      e.preventDefault();
-    }
     
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -368,17 +363,8 @@ export default function App() {
     const scaleX = CANVAS_WIDTH / rect.width;
     const scaleY = CANVAS_HEIGHT / rect.height;
 
-    let clientX, clientY;
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = e.clientX;
-      clientY = e.clientY;
-    }
-
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
 
     // Don't fire too low
     if (y < CANVAS_HEIGHT - 50) {
@@ -423,9 +409,8 @@ export default function App() {
             ref={canvasRef}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            onMouseDown={handleCanvasClick}
-            onTouchStart={handleCanvasClick}
-            className="w-full h-auto max-h-[70vh] cursor-crosshair"
+            onPointerDown={handlePointerDown}
+            className="w-full h-auto max-h-[70vh] cursor-crosshair touch-none"
           />
           <div className="scanline" />
           
