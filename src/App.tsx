@@ -270,11 +270,11 @@ export default function App() {
       ctx.closePath();
       ctx.fill();
       
-      // Missile count text
+      // Missile count text - Enlarged for visibility
       ctx.fillStyle = '#ffffff';
-      ctx.font = '10px JetBrains Mono';
+      ctx.font = '18px JetBrains Mono';
       ctx.textAlign = 'center';
-      ctx.fillText(b.missiles.toString(), b.pos.x, b.pos.y + 12);
+      ctx.fillText(b.missiles.toString(), b.pos.x, b.pos.y + 20);
     });
 
     // Draw Enemy Rockets
@@ -355,6 +355,11 @@ export default function App() {
 
   const handleCanvasClick = (e: React.MouseEvent | React.TouchEvent) => {
     if (status !== GameStatus.PLAYING) return;
+    
+    // Prevent double-firing on touch devices (where touch followed by mouse event)
+    if (e.type === 'touchstart' && e.cancelable) {
+      e.preventDefault();
+    }
     
     const canvas = canvasRef.current;
     if (!canvas) return;
